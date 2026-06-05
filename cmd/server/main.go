@@ -3,8 +3,6 @@ package main
 import (
 	"fmt"
 	"log"
-	"os"
-	"os/signal"
 
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/gamelogic"
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/pubsub"
@@ -28,9 +26,6 @@ func main() {
 	}
 	defer channel.Close()
 
-	signalCh := make(chan os.Signal, 1)
-	signal.Notify(signalCh, os.Interrupt)
-
 	gamelogic.PrintServerHelp()
 	for {
 		words := gamelogic.GetInput()
@@ -38,7 +33,8 @@ func main() {
 			continue
 		}
 		event := words[0]
-		if event == "pause" {
+		switch event {
+		case "pause":
 			fmt.Println("sending a pause message")
 			err := pubsub.PublishJSON(channel, routing.ExchangePerilDirect, routing.PauseKey, routing.PlayingState{
 				IsPaused: true,
@@ -46,8 +42,7 @@ func main() {
 			if err != nil {
 				log.Println(err)
 			}
-		}
-		if event == "resume" {
+		case "resume":
 			fmt.Println("sending a resume message")
 			err := pubsub.PublishJSON(channel, routing.ExchangePerilDirect, routing.PauseKey, routing.PlayingState{
 				IsPaused: false,
@@ -55,15 +50,11 @@ func main() {
 			if err != nil {
 				log.Println(err)
 			}
-		}
-		if event == "quit" {
-			fmt.Println("exiting...")
-			break
-		} else {
+		case "quit":
+			fmt.Println("exiting!")
+			return
+		default:
 			fmt.Printf("unknown event: %s\n", event)
 		}
 	}
-
-	<-signalCh
-	log.Println("shutting down server ...")
 }
