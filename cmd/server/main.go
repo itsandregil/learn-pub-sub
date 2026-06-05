@@ -20,11 +20,22 @@ func main() {
 	defer conn.Close()
 	log.Println("connection to broker was successful")
 
-	channel, err := conn.Channel()
+	publishCh, err := conn.Channel()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("could not create channel: %v", err)
 	}
-	defer channel.Close()
+
+	_, queue, err := pubsub.DeclareAndBind(
+		conn,
+		routing.ExchangePerilTopic,
+		routing.GameLogSlug,
+		routing.GameLogSlug+".*",
+		pubsub.QueueTypeDurable,
+	)
+	if err != nil {
+		log.Fatalf("couldn't subscribe to logs: %v", err)
+	}
+	log.Printf("Queue %s declare and bound!\n", queue.Name)
 
 	gamelogic.PrintServerHelp()
 	for {
@@ -36,7 +47,7 @@ func main() {
 		switch event {
 		case "pause":
 			fmt.Println("sending a pause message")
-			err := pubsub.PublishJSON(channel, routing.ExchangePerilDirect, routing.PauseKey, routing.PlayingState{
+			err := pubsub.PublishJSON(publishCh, routing.ExchangePerilDirect, routing.PauseKey, routing.PlayingState{
 				IsPaused: true,
 			})
 			if err != nil {
@@ -44,7 +55,7 @@ func main() {
 			}
 		case "resume":
 			fmt.Println("sending a resume message")
-			err := pubsub.PublishJSON(channel, routing.ExchangePerilDirect, routing.PauseKey, routing.PlayingState{
+			err := pubsub.PublishJSON(publishCh, routing.ExchangePerilDirect, routing.PauseKey, routing.PlayingState{
 				IsPaused: false,
 			})
 			if err != nil {
