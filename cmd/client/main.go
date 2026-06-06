@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"log"
-	"strings"
 
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/gamelogic"
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/pubsub"
@@ -24,20 +23,20 @@ func main() {
 	if err != nil {
 		log.Fatalf("couldn't get username: %v", err)
 	}
+	gs := gamelogic.NewGameState(username)
 
-	_, queue, err := pubsub.DeclareAndBind(
+	err = pubsub.SubscribeJSON(
 		conn,
 		routing.ExchangePerilDirect,
-		strings.Join([]string{routing.PauseKey, username}, "."),
+		routing.PauseKey+"."+username,
 		routing.PauseKey,
 		pubsub.QueueTypeTransient,
+		handlerPause(gs),
 	)
 	if err != nil {
-		log.Fatalf("couldn't subscribe to pause queue: %v", err)
+		log.Fatalf("failed to subscribe: %v", err)
 	}
-	log.Printf("Queue %s declare and bound!\n", queue.Name)
 
-	gs := gamelogic.NewGameState(username)
 	for {
 		words := gamelogic.GetInput()
 		if len(words) == 0 {
@@ -48,14 +47,15 @@ func main() {
 		case "spawn":
 			err := gs.CommandSpawn(words)
 			if err != nil {
-				log.Println(err)
+				fmt.Println(err)
+				continue
 			}
 		case "move":
-			move, err := gs.CommandMove(words)
+			_, err := gs.CommandMove(words)
 			if err != nil {
-				log.Println(err)
+				fmt.Println(err)
+				continue
 			}
-			fmt.Printf("Move to %s was sucessful\n", move.ToLocation)
 		case "status":
 			gs.CommandStatus()
 		case "help":
@@ -68,5 +68,12 @@ func main() {
 		default:
 			fmt.Println("unknown command")
 		}
+	}
+}
+
+func handlerPause(gs *gamelogic.GameState) func(routing.PlayingState) {
+	return func(state routing.PlayingState) {
+		defer fmt.Print("> ")
+		gs.HandlePause(state)
 	}
 }
