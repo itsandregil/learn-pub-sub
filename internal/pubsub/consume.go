@@ -34,7 +34,7 @@ func DeclareAndBind(conn *amqp.Connection, exchange, queueName, key string, queu
 		queueType != QueueTypeDurable,
 		queueType != QueueTypeDurable,
 		false,
-		nil,
+		amqp.Table{"x-dead-letter-exchange": "peril_dlx"},
 	)
 	if err != nil {
 		return nil, amqp.Queue{}, fmt.Errorf("failed to declare queue: %w", err)

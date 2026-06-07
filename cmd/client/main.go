@@ -39,18 +39,29 @@ func main() {
 		handlerPause(gs),
 	)
 	if err != nil {
-		log.Fatalf("failed to subscribe: %v", err)
+		log.Fatalf("failed to subscribe to pause: %v", err)
 	}
-
-	err = pubsub.SubscribeJSON(conn,
+	err = pubsub.SubscribeJSON(
+		conn,
 		routing.ExchangePerilTopic,
 		routing.ArmyMovesPrefix+"."+username,
 		routing.ArmyMovesPrefix+".*",
 		pubsub.QueueTypeTransient,
-		handlerMove(gs),
+		handlerMove(gs, userCh),
 	)
 	if err != nil {
-		log.Fatalf("failed to subscribe: %v", err)
+		log.Fatalf("failed to subscribe to army moves: %v", err)
+	}
+	err = pubsub.SubscribeJSON(
+		conn,
+		routing.ExchangePerilTopic,
+		routing.WarRecognitionsPrefix,
+		routing.WarRecognitionsPrefix+".*",
+		pubsub.QueueTypeDurable,
+		handlerWar(gs),
+	)
+	if err != nil {
+		log.Fatalf("failed to subscribe to war recognitions: %v", err)
 	}
 
 	for {
@@ -95,28 +106,5 @@ func main() {
 		default:
 			fmt.Println("unknown command")
 		}
-	}
-}
-
-func handlerPause(gs *gamelogic.GameState) func(routing.PlayingState) pubsub.AckType {
-	return func(state routing.PlayingState) pubsub.AckType {
-		defer fmt.Print("> ")
-		gs.HandlePause(state)
-		return pubsub.Ack
-	}
-}
-
-func handlerMove(gs *gamelogic.GameState) func(gamelogic.ArmyMove) pubsub.AckType {
-	return func(move gamelogic.ArmyMove) pubsub.AckType {
-		defer fmt.Print("> ")
-		outcome := gs.HandleMove(move)
-		switch outcome {
-		case gamelogic.MoveOutComeSafe, gamelogic.MoveOutcomeMakeWar:
-			return pubsub.Ack
-		case gamelogic.MoveOutcomeSamePlayer:
-			return pubsub.NackDiscard
-		}
-		fmt.Printf("unknown outcome: %v\n", outcome)
-		return pubsub.NackDiscard
 	}
 }
