@@ -1,7 +1,6 @@
 package pubsub
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -16,33 +15,19 @@ const (
 	QueueTypeTransient QueueType = "transient"
 )
 
-func PublishJSON[T any](ch *amqp.Channel, exchange, key string, val T) error {
-	data, err := json.Marshal(val)
-	if err != nil {
-		return fmt.Errorf("failed to marshal: %w", err)
-	}
-	err = ch.PublishWithContext(context.Background(), exchange, key, false, false, amqp.Publishing{
-		ContentType: "application/json",
-		Body:        data,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to publish: %w", err)
-	}
-	return nil
-}
-
 func DeclareAndBind(conn *amqp.Connection, exchange, queueName, key string, queueType QueueType) (*amqp.Channel, amqp.Queue, error) {
 	channel, err := conn.Channel()
 	if err != nil {
 		return nil, amqp.Queue{}, fmt.Errorf("failed to open channel: %w", err)
 	}
-	var queue amqp.Queue
-	switch queueType {
-	case QueueTypeDurable:
-		queue, err = channel.QueueDeclare(queueName, true, false, false, false, nil)
-	case QueueTypeTransient:
-		queue, err = channel.QueueDeclare(queueName, false, true, true, false, nil)
-	}
+	queue, err := channel.QueueDeclare(
+		queueName,
+		queueType == QueueTypeDurable,
+		queueType != QueueTypeDurable,
+		queueType != QueueTypeDurable,
+		false,
+		nil,
+	)
 	if err != nil {
 		return nil, amqp.Queue{}, fmt.Errorf("failed to declare queue: %w", err)
 	}
@@ -58,22 +43,21 @@ func SubscribeJSON[T any](conn *amqp.Connection, exchange, queueName, key string
 	if err != nil {
 		return fmt.Errorf("failed to declare and bind queue: %w", err)
 	}
-	deliveryCh, err := ch.Consume(queue.Name, "", false, false, false, false, nil)
+	msgs, err := ch.Consume(queue.Name, "", false, false, false, false, nil)
 	if err != nil {
 		return fmt.Errorf("failed to consume: %w", err)
 	}
 	go func() {
-		for delivery := range deliveryCh {
+		defer ch.Close()
+		for msg := range msgs {
 			var data T
-			err := json.Unmarshal(delivery.Body, &data)
+			err := json.Unmarshal(msg.Body, &data)
 			if err != nil {
-				log.Printf("failed to unmarshal: %v", err)
+				log.Printf("failed to unmarshal message: %v", err)
 				continue
 			}
 			handler(data)
-			if err := delivery.Ack(false); err != nil {
-				log.Printf("failed to ack: %v", err)
-			}
+			msg.Ack(false)
 		}
 	}()
 	return nil
