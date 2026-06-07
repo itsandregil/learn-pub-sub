@@ -15,6 +15,14 @@ const (
 	QueueTypeTransient QueueType = "transient"
 )
 
+type AckType int
+
+const (
+	Ack AckType = iota
+	NackRequeue
+	NackDiscard
+)
+
 func DeclareAndBind(conn *amqp.Connection, exchange, queueName, key string, queueType QueueType) (*amqp.Channel, amqp.Queue, error) {
 	channel, err := conn.Channel()
 	if err != nil {
@@ -38,7 +46,12 @@ func DeclareAndBind(conn *amqp.Connection, exchange, queueName, key string, queu
 	return channel, queue, nil
 }
 
-func SubscribeJSON[T any](conn *amqp.Connection, exchange, queueName, key string, queueType QueueType, handler func(T)) error {
+func SubscribeJSON[T any](
+	conn *amqp.Connection,
+	exchange, queueName, key string,
+	queueType QueueType,
+	handler func(T) AckType,
+) error {
 	ch, queue, err := DeclareAndBind(conn, exchange, queueName, key, queueType)
 	if err != nil {
 		return fmt.Errorf("failed to declare and bind queue: %w", err)
@@ -56,8 +69,14 @@ func SubscribeJSON[T any](conn *amqp.Connection, exchange, queueName, key string
 				log.Printf("failed to unmarshal message: %v", err)
 				continue
 			}
-			handler(data)
-			msg.Ack(false)
+			switch ack := handler(data); ack {
+			case Ack:
+				msg.Ack(false)
+			case NackRequeue:
+				msg.Nack(false, true)
+			case NackDiscard:
+				msg.Nack(false, false)
+			}
 		}
 	}()
 	return nil
